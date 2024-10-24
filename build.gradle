@@ -1,26 +1,36 @@
+import org.gradle.api.provider.ValueSourceParameters
+
+import java.nio.charset.StandardCharsets
+
 abstract class FooVersionPrinter extends DefaultTask {
     @Input
     abstract Property<String> getResult()
 
-    @Internal
-    final Provider<String> version = result.orElse("Not installed")
-
     @TaskAction
     void printVersion() {
         try {
-            logger.quiet(version.get())
+            logger.quiet(result..getOrElse('Not installed'))
         } catch (Exception e) {
             throw new GradleException("HALP", e)
         }
     }
 }
 
-tasks.register("printFooVersion", FooVersionPrinter) {
-    Provider<String> stdout = project.providers.exec {
-      commandLine("foo")
-      args("-v")
-      ignoreExitValue(true)
-    }.standardOutput.asText
+abstract class FooVersionValueSource implements ValueSource<String, ValueSourceParameters.None> {
+    @Inject
+    abstract ExecOperations getExecOperations()
 
-    it.result = stdout
+    String obtain() {
+        ByteArrayOutputStream output = new ByteArrayOutputStream()
+        execOperations.exec {
+            it.commandLine "foo", "--version"
+            it.standardOutput = output
+            it.ignoreExitValue = true
+        }
+        return new String(output.toByteArray(), StandardCharsets.UTF_8)
+    }
+}
+
+tasks.register("printFooVersion", FooVersionPrinter) {
+    it.result = providers.of(FooVersionValueSource) {}
 }
